@@ -22,7 +22,15 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y git python3 ninja-build curl unzip binutils-aarch64-linux-gnu
+          sudo apt-get install -y git python3 ninja-build curl unzip binutils-aarch64-linux-gnu ccache
+
+      - name: ccache cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/ccache
+          key: ccache-${{ github.run_id }}
+          restore-keys: |
+            ccache-
 
       - name: Fetch depot_tools
         run: |
@@ -62,13 +70,20 @@ jobs:
           python3 build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
           # PATCH: 缩小 PartitionAlloc pool + 关闭 caged heap
           cp $GITHUB_WORKSPACE/patch.sh ./patch.sh && chmod +x ./patch.sh && ./patch.sh
-          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=false v8_enable_sandbox=false v8_enable_pointer_compression=true cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0'
+          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=false v8_enable_sandbox=false v8_enable_pointer_compression=true cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0 cc_wrapper="ccache"'
 
       - name: Build headless_shell
         working-directory: /opt/src
+        env:
+          CCACHE_DIR: /opt/ccache
+          CCACHE_MAXSIZE: "10G"
         run: |
           export PATH="/opt/depot_tools:$PATH"
+          ccache -M 10G
+          ccache -s
           ninja -C out/headless headless_shell
+          ccache -s
+          echo "ccache hit rate above"
 
       - name: Verify binary
         working-directory: /opt/src
