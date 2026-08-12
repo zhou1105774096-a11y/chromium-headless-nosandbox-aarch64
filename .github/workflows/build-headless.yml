@@ -47,6 +47,10 @@ jobs:
         run: |
           export PATH="/opt/depot_tools:$PATH"
           ls /opt/depot_tools/python3_bin_reldir.txt 2>/dev/null || /opt/depot_tools/ensure_bootstrap
+          # 生成 LASTCHANGE.committime (fetch --nohooks 跳过了, gn 需要)
+          python3 build/util/lastchange.py -o LASTCHANGE
+          cat LASTCHANGE
+          ls -la LASTCHANGE.committime 2>/dev/null || find . -name "LASTCHANGE.committime" 2>/dev/null | head -2
           # 安装 aarch64 sysroot
           python3 build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
           # PATCH: 缩小 PartitionAlloc pool + 关闭 caged heap
