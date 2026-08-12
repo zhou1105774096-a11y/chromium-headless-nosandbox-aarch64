@@ -1,0 +1,78 @@
+name: Build Chromium headless-shell (no sandbox, aarch64)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-headless-aarch64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check disk & memory
+        run: |
+          nproc
+          free -h
+          df -h / | tail -1
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y git python3 ninja-build curl unzip binutils-aarch64-linux-gnu
+
+      - name: Fetch depot_tools
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools
+          echo "/opt/depot_tools" >> $GITHUB_PATH
+
+      - name: Fetch Chromium source
+        run: |
+          cd /opt
+          export PATH="/opt/depot_tools:$PATH"
+          python3 /opt/depot_tools/update_depot_tools --no-bootstrap 2>/dev/null || true
+          /opt/depot_tools/ensure_bootstrap 2>/dev/null || true
+          # fetch chromium with no history to save disk
+          fetch --nohooks --no-history chromium
+          cd src
+          gclient sync -D --with_branch_heads --nohooks 2>/dev/null || true
+        env:
+          DEPOT_TOOLS_UPDATE: "0"
+
+      - name: Configure gn (headless shell, cross-compile aarch64)
+        working-directory: /opt/src
+        run: |
+          export PATH="/opt/depot_tools:$PATH"
+          ls /opt/depot_tools/python3_bin_reldir.txt 2>/dev/null || /opt/depot_tools/ensure_bootstrap
+          # 安装 aarch64 sysroot
+          python3 build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
+          # PATCH: 缩小 PartitionAlloc pool + 关闭 caged heap
+          cp $GITHUB_WORKSPACE/patch.sh ./patch.sh && chmod +x ./patch.sh && ./patch.sh
+          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=false v8_enable_sandbox=false v8_enable_pointer_compression=true cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0'
+
+      - name: Build headless_shell
+        working-directory: /opt/src
+        run: |
+          export PATH="/opt/depot_tools:$PATH"
+          ninja -C out/headless headless_shell
+
+      - name: Verify binary
+        working-directory: /opt/src
+        run: |
+          file out/headless/headless_shell
+          ls -lh out/headless/headless_shell
+          ls -lh out/headless/icudtl.dat out/headless/snapshot_blob.bin 2>/dev/null || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-headless-nosandbox-aarch64
+          path: |
+            /opt/src/out/headless/headless_shell
+            /opt/src/out/headless/icudtl.dat
+            /opt/src/out/headless/snapshot_blob.bin
+          if-no-files-found: warn
+          retention-days: 7
