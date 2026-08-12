@@ -38,7 +38,9 @@ jobs:
           # fetch chromium with no history to save disk
           fetch --nohooks --no-history chromium
           cd src
-          gclient sync -D --with_branch_heads --nohooks 2>/dev/null || true
+          # 跑 hooks 生成版本文件 (LASTCHANGE/DAWN_VERSION 等, --nohooks 跳过了)
+          gclient sync -D --with_branch_heads
+          gclient runhooks 2>/dev/null || true
         env:
           DEPOT_TOOLS_UPDATE: "0"
 
