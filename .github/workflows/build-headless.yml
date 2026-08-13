@@ -28,9 +28,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/ccache
-          key: ccache-${{ github.run_id }}
+          # 固定 key 跨 job 复用; save-always 让超时/失败也保存缓存
+          key: ccache-main
           restore-keys: |
             ccache-
+          save-always: true
 
       - name: Fetch depot_tools
         run: |
