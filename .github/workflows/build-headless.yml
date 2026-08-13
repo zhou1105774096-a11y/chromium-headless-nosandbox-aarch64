@@ -27,7 +27,9 @@ jobs:
       - name: ccache cache
         uses: actions/cache@v4
         with:
-          path: /opt/ccache
+          path: |
+            /opt/ccache
+            /opt/src/out
           # 固定 key 跨 job 复用; save-always 让超时/失败也保存缓存
           key: ccache-main
           restore-keys: |
@@ -72,7 +74,7 @@ jobs:
           python3 build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
           # PATCH: 缩小 PartitionAlloc pool + 关闭 caged heap
           cp $GITHUB_WORKSPACE/patch.sh ./patch.sh && chmod +x ./patch.sh && ./patch.sh
-          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=false v8_enable_sandbox=false v8_enable_pointer_compression=true cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0 cc_wrapper="ccache"'
+          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=false v8_enable_sandbox=false v8_enable_pointer_compression=true cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0 cc_wrapper="ccache" use_ozone=true ozone_auto_platforms=false ozone_platform="headless" ozone_platform_headless=true headless_use_embedded_resources=true headless_enable_commands=false headless_use_prefs=false use_bundled_fontconfig=true icu_use_data_file=false v8_use_external_startup_data=false use_alsa=false use_bluez=false use_cups=false use_dbus=false'
 
       - name: Build headless_shell
         working-directory: /opt/src
