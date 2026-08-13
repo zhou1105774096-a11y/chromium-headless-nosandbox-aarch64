@@ -24,17 +24,16 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y git python3 ninja-build curl unzip binutils-aarch64-linux-gnu ccache
 
-      - name: ccache cache
-        uses: actions/cache@v4
+      - name: ccache restore
+        uses: actions/cache/restore@v4
         with:
           path: |
             /opt/ccache
             /opt/src/out
-          # 固定 key 跨 job 复用; save-always 让超时/失败也保存缓存
-          key: ccache-main
+          # restore 用前缀匹配最近一次保存; save 用唯一 key(见下)
+          key: ccache-main-${{ github.run_id }}
           restore-keys: |
-            ccache-
-          save-always: true
+            ccache-main-
 
       - name: Fetch depot_tools
         run: |
@@ -87,6 +86,7 @@ jobs:
 
       - name: Build headless_shell
         working-directory: /opt/src
+        continue-on-error: true
         env:
           CCACHE_DIR: /opt/ccache
           CCACHE_MAXSIZE: "10G"
@@ -94,19 +94,21 @@ jobs:
           export PATH="/opt/depot_tools:$PATH"
           ccache -M 10G
           ccache -s
-          # 关键: workflow timeout=360min 触发取消会让 Post ccache 保存被 skip(丢失进度)。
-          # 这里用 timeout 350m 包裹 ninja —— 若编译超时, ninja 被截断(timeout 返回124),
-          # 随后主动 exit 0 让 job 正常结束, 触发 Post ccache cache 保存(ccache 增量续跑)。
-          # 下一轮同配置 resume: ccache 命中后快速继续编译。
-          timeout 350m ninja -C out/headless headless_shell
-          rc=$?
+          # 关键: GitHub 6h workflow 超时取消会跳过所有后续步骤(ccache 丢失)。
+          # 用 timeout -s KILL 5h50m 强杀 ninja → 返回124 → 步骤标记失败(continue-on-error
+          # 继续执行), 独立的 ccache save 步骤随后保存进度。下轮 restore 命中后续跑。
+          timeout -s KILL 350m ninja -C out/headless headless_shell || true
           ccache -s
-          echo "ccache hit rate above (ninja rc=$rc)"
-          if [ "$rc" = "124" ]; then
-            echo "编译超时(5h50m), 主动保存 ccache 进度"
-            exit 0
-          fi
-          exit $rc
+          echo "ccache hit rate above"
+
+      - name: ccache save
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /opt/ccache
+            /opt/src/out
+          key: ccache-main-${{ github.run_id }}
 
       - name: Verify binary
         working-directory: /opt/src
