@@ -74,13 +74,16 @@ jobs:
           python3 build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
           # PATCH: 缩小 PartitionAlloc pool + 关闭 caged heap
           cp $GITHUB_WORKSPACE/patch.sh ./patch.sh && chmod +x ./patch.sh && ./patch.sh
-          # 修复 v8_use_external_startup_data=false → true:
-          #   上次在 mksnapshot (host x64) 生成 embedded.S 时 SIGTRAP(-5) 崩溃,
-          #   2 核 runner 上 host V8 的 sandbox VA 预留触发 __builtin_trap。
-          #   外部 snapshot 模式(默认) 走 --startup_blob 路径, 不生成 embedded.S,
-          #   产物为独立 snapshot_blob.bin (headless_shell 运行时旁加载)。
-          # 注意: headless_shell 部署需 headless_shell + icudtl.dat + snapshot_blob.bin 同目录。
-          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=false v8_enable_sandbox=false v8_enable_pointer_compression=true cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0 blink_symbol_level=0 v8_symbol_level=0 enable_nacl=false use_thin_lto=false dcheck_always_on=false cc_wrapper="ccache" use_ozone=true ozone_auto_platforms=false ozone_platform="headless" ozone_platform_headless=true headless_use_embedded_resources=true headless_enable_commands=false headless_use_prefs=false use_bundled_fontconfig=true icu_use_data_file=false use_alsa=false use_bluez=false use_cups=false use_dbus=false'
+          # 修复 v8 snapshot 交叉编译崩溃 (军师 2026-08-13 探讨结论):
+          #   上次 [27844/43718] 处 mksnapshot 生成 embedded.S 时 SIGTRAP(-5)。
+          #   根因: v8_enable_pointer_compression=true 要求 4GB aligned cage,
+          #   mksnapshot 初始化 V8 isolate 时 mmap 失败触发 CHECK → __builtin_trap。
+          # 修复:
+          #   1. v8_enable_pointer_compression=false  (去 4GB aligned cage 需求, 关键)
+          #   2. v8_use_external_startup_data=true   (snapshot_blob.bin 外置, 默认值)
+          # 产物: headless_shell + icudtl.dat + snapshot_blob.bin 三件套部署。
+          # 备选(若仍崩): v8_use_snapshot=false 完全跳过 snapshot 生成(启动变慢)。
+          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=false v8_enable_sandbox=false v8_enable_pointer_compression=false cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0 blink_symbol_level=0 v8_symbol_level=0 enable_nacl=false use_thin_lto=false dcheck_always_on=false cc_wrapper="ccache" use_ozone=true ozone_auto_platforms=false ozone_platform="headless" ozone_platform_headless=true headless_use_embedded_resources=true headless_enable_commands=false headless_use_prefs=false use_bundled_fontconfig=true icu_use_data_file=false use_alsa=false use_bluez=false use_cups=false use_dbus=false'
 
       - name: Build headless_shell
         working-directory: /opt/src
