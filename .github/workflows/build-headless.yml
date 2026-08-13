@@ -94,9 +94,19 @@ jobs:
           export PATH="/opt/depot_tools:$PATH"
           ccache -M 10G
           ccache -s
-          ninja -C out/headless headless_shell
+          # 关键: workflow timeout=360min 触发取消会让 Post ccache 保存被 skip(丢失进度)。
+          # 这里用 timeout 350m 包裹 ninja —— 若编译超时, ninja 被截断(timeout 返回124),
+          # 随后主动 exit 0 让 job 正常结束, 触发 Post ccache cache 保存(ccache 增量续跑)。
+          # 下一轮同配置 resume: ccache 命中后快速继续编译。
+          timeout 350m ninja -C out/headless headless_shell
+          rc=$?
           ccache -s
-          echo "ccache hit rate above"
+          echo "ccache hit rate above (ninja rc=$rc)"
+          if [ "$rc" = "124" ]; then
+            echo "编译超时(5h50m), 主动保存 ccache 进度"
+            exit 0
+          fi
+          exit $rc
 
       - name: Verify binary
         working-directory: /opt/src
