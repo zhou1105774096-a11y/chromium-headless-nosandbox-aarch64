@@ -27,10 +27,8 @@ jobs:
       - name: ccache restore
         uses: actions/cache/restore@v4
         with:
-          path: |
-            /opt/ccache
-            /opt/src/out
-          # restore 用前缀匹配最近一次保存; save 用唯一 key(见下)
+          path: /opt/ccache
+          # 只缓存 ccache 命中缓存; 不缓存 out (30-60GB 塞不进 GitHub cache, 之前是核心 bug)
           key: ccache-main-${{ github.run_id }}
           restore-keys: |
             ccache-main-
@@ -82,17 +80,17 @@ jobs:
           #   2. v8_use_external_startup_data=true   (snapshot_blob.bin 外置, 默认值)
           # 产物: headless_shell + icudtl.dat + snapshot_blob.bin 三件套部署。
           # 备选(若仍崩): v8_use_snapshot=false 完全跳过 snapshot 生成(启动变慢)。
-          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=false v8_enable_sandbox=false v8_enable_pointer_compression=false cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0 blink_symbol_level=0 v8_symbol_level=0 enable_nacl=false use_thin_lto=false dcheck_always_on=false cc_wrapper="ccache" use_ozone=true ozone_auto_platforms=false ozone_platform="headless" ozone_platform_headless=true headless_use_embedded_resources=true headless_enable_commands=false headless_use_prefs=false use_bundled_fontconfig=true icu_use_data_file=false use_alsa=false use_bluez=false use_cups=false use_dbus=false'
+          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=true v8_enable_sandbox=false v8_enable_pointer_compression=false cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0 blink_symbol_level=0 v8_symbol_level=0 enable_nacl=false enable_pdf=false enable_plugins=false enable_extensions=false enable_remoting=false enable_widevine=false enable_print_preview=false enable_reporting=false safe_browsing_mode=0 use_thin_lto=false use_lld=true dcheck_always_on=false cc_wrapper="ccache" use_ozone=true ozone_auto_platforms=false ozone_platform="headless" ozone_platform_headless=true headless_use_embedded_resources=true headless_enable_commands=false headless_use_prefs=false use_bundled_fontconfig=true icu_use_data_file=false use_alsa=false use_bluez=false use_cups=false use_dbus=false'
 
       - name: Build headless_shell
         working-directory: /opt/src
         continue-on-error: true
         env:
           CCACHE_DIR: /opt/ccache
-          CCACHE_MAXSIZE: "10G"
+          CCACHE_MAXSIZE: "5G"
         run: |
           export PATH="/opt/depot_tools:$PATH"
-          ccache -M 10G
+          ccache -M 5G
           ccache -s
           # 关键: GitHub 6h workflow 超时取消会跳过所有后续步骤(ccache 丢失)。
           # 用 timeout -s KILL 5h20m 强杀 ninja(留40m给ccache save, 避免GitHub 6h先到) → 返回124 → 步骤标记失败(continue-on-error
@@ -105,9 +103,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: |
-            /opt/ccache
-            /opt/src/out
+          path: /opt/ccache
           key: ccache-main-${{ github.run_id }}
 
       - name: Verify binary
