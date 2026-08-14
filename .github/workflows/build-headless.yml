@@ -68,27 +68,26 @@ jobs:
           cp $GITHUB_WORKSPACE/patch.sh ./patch.sh && chmod +x ./patch.sh && ./patch.sh
           # 用官方 headless.gn 为基础 + 追加交叉编译/裁剪参数 (军师探讨结论: headless.gn 才是 headless 正确起点)
           mkdir -p out/headless
-          cat > out/headless/args.gn << 'EOF'
-import("//build/args/headless.gn")
-
-target_os="linux"
-target_cpu="arm64"
-is_debug=false
-is_official_build=true
-v8_enable_sandbox=false
-v8_enable_pointer_compression=false
-cppgc_enable_caged_heap=false
-use_allocator_shim=true
-symbol_level=0
-blink_symbol_level=0
-v8_symbol_level=0
-enable_nacl=false
-use_thin_lto=false
-use_lld=true
-dcheck_always_on=false
-chrome_pgo_phase=0
-cc_wrapper="ccache"
-EOF
+          printf '%s\n' \
+            'import("//build/args/headless.gn")' \
+            '' \
+            'target_os="linux"' \
+            'target_cpu="arm64"' \
+            'is_debug=false' \
+            'is_official_build=true' \
+            'v8_enable_sandbox=false' \
+            'v8_enable_pointer_compression=false' \
+            'cppgc_enable_caged_heap=false' \
+            'use_allocator_shim=true' \
+            'symbol_level=0' \
+            'blink_symbol_level=0' \
+            'v8_symbol_level=0' \
+            'enable_nacl=false' \
+            'use_thin_lto=false' \
+            'use_lld=true' \
+            'dcheck_always_on=false' \
+            'chrome_pgo_phase=0' \
+            'cc_wrapper="ccache"' > out/headless/args.gn
           gn gen out/headless
           echo "======== 诊断: 真实依赖闭包 ========"
           echo "可执行 target:"
