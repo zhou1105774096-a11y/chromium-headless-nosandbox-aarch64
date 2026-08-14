@@ -95,9 +95,9 @@ jobs:
           ccache -M 10G
           ccache -s
           # 关键: GitHub 6h workflow 超时取消会跳过所有后续步骤(ccache 丢失)。
-          # 用 timeout -s KILL 5h50m 强杀 ninja → 返回124 → 步骤标记失败(continue-on-error
+          # 用 timeout -s KILL 5h20m 强杀 ninja(留40m给ccache save, 避免GitHub 6h先到) → 返回124 → 步骤标记失败(continue-on-error
           # 继续执行), 独立的 ccache save 步骤随后保存进度。下轮 restore 命中后续跑。
-          timeout -s KILL 350m ninja -C out/headless headless_shell || true
+          timeout -s KILL 320m ninja -C out/headless headless_shell || true
           ccache -s
           echo "ccache hit rate above"
 
