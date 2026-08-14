@@ -29,7 +29,7 @@ jobs:
         with:
           path: /opt/ccache
           # 只缓存 ccache 命中缓存; 不缓存 out (30-60GB 塞不进 GitHub cache, 之前是核心 bug)
-          key: ccache-main-${{ github.run_id }}
+          key: ccache-main-latest
           restore-keys: |
             ccache-main-
 
@@ -58,29 +58,46 @@ jobs:
         run: |
           export PATH="/opt/depot_tools:$PATH"
           ls /opt/depot_tools/python3_bin_reldir.txt 2>/dev/null || /opt/depot_tools/ensure_bootstrap
-          # 生成 LASTCHANGE.committime (fetch --nohooks 跳过了, gn 需要)
-          # compute_build_timestamp.py 读 build/util/LASTCHANGE.committime
           cd build/util
           python3 lastchange.py -o LASTCHANGE
           cat LASTCHANGE
           ls -la LASTCHANGE.committime
           cd /opt/src
-          # 确认路径
           ls -la build/util/LASTCHANGE.committime
-          # 安装 aarch64 sysroot
           python3 build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
-          # PATCH: 缩小 PartitionAlloc pool + 关闭 caged heap
           cp $GITHUB_WORKSPACE/patch.sh ./patch.sh && chmod +x ./patch.sh && ./patch.sh
-          # 修复 v8 snapshot 交叉编译崩溃 (军师 2026-08-13 探讨结论):
-          #   上次 [27844/43718] 处 mksnapshot 生成 embedded.S 时 SIGTRAP(-5)。
-          #   根因: v8_enable_pointer_compression=true 要求 4GB aligned cage,
-          #   mksnapshot 初始化 V8 isolate 时 mmap 失败触发 CHECK → __builtin_trap。
-          # 修复:
-          #   1. v8_enable_pointer_compression=false  (去 4GB aligned cage 需求, 关键)
-          #   2. v8_use_external_startup_data=true   (snapshot_blob.bin 外置, 默认值)
-          # 产物: headless_shell + icudtl.dat + snapshot_blob.bin 三件套部署。
-          # 备选(若仍崩): v8_use_snapshot=false 完全跳过 snapshot 生成(启动变慢)。
-          gn gen out/headless --args='target_os="linux" target_cpu="arm64" is_debug=false is_official_build=true v8_enable_sandbox=false v8_enable_pointer_compression=false cppgc_enable_caged_heap=false use_allocator_shim=true symbol_level=0 blink_symbol_level=0 v8_symbol_level=0 enable_nacl=false use_thin_lto=false use_lld=true dcheck_always_on=false chrome_pgo_phase=0 cc_wrapper="ccache" use_ozone=true ozone_auto_platforms=false ozone_platform="headless" ozone_platform_headless=true headless_use_embedded_resources=true headless_enable_commands=false headless_use_prefs=false use_bundled_fontconfig=true icu_use_data_file=false use_alsa=false use_bluez=false use_cups=false use_dbus=false'
+          # 用官方 headless.gn 为基础 + 追加交叉编译/裁剪参数 (军师探讨结论: headless.gn 才是 headless 正确起点)
+          mkdir -p out/headless
+          cat > out/headless/args.gn << 'EOF'
+import("//build/args/headless.gn")
+
+target_os="linux"
+target_cpu="arm64"
+is_debug=false
+is_official_build=true
+v8_enable_sandbox=false
+v8_enable_pointer_compression=false
+cppgc_enable_caged_heap=false
+use_allocator_shim=true
+symbol_level=0
+blink_symbol_level=0
+v8_symbol_level=0
+enable_nacl=false
+use_thin_lto=false
+use_lld=true
+dcheck_always_on=false
+chrome_pgo_phase=0
+cc_wrapper="ccache"
+EOF
+          gn gen out/headless
+          echo "======== 诊断: 真实依赖闭包 ========"
+          echo "可执行 target:"
+          gn ls out/headless --type=executable 2>/dev/null || true
+          echo "headless_shell 依赖闭包 target 数 (ninja -t query):"
+          ninja -C out/headless -t query headless_shell 2>/dev/null | grep -c "input:" || true
+          echo "total ninja targets:"
+          ninja -C out/headless -t targets all 2>/dev/null | wc -l || true
+          echo "======== 诊断结束 ========"
 
       - name: Build headless_shell
         working-directory: /opt/src
@@ -104,7 +121,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /opt/ccache
-          key: ccache-main-${{ github.run_id }}
+          key: ccache-main-latest
 
       - name: Verify binary
         working-directory: /opt/src
